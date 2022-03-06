@@ -25,7 +25,7 @@ type PutRequestData struct {
 }
 
 func HandleRoot(rw http.ResponseWriter, r *http.Request) {
-	_, err := rw.Write([]byte("Hello from server)"))
+	_, err := rw.Write([]byte("Hello from server"))
 	if err != nil {
 		fmt.Println(err.Error())
 		return
