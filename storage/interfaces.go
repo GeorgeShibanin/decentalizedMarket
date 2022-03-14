@@ -47,6 +47,6 @@ type OrderInfoForClient struct {
 
 type Storage interface {
 	GetOrder(ctx context.Context, weight Weight, size Size,
-		pointStart DeparturePoint, pointEnd ReceivePoint, orderReadyDate ISOTimestamp) ([]OrderInfoForClient, error)
+		pointStart string, pointEnd string, orderReadyDate ISOTimestamp) ([]OrderInfoForClient, error)
 	AcceptDelivery(ctx context.Context, id OrderId) (string, error)
 }

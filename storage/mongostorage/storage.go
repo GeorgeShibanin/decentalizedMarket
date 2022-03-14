@@ -4,18 +4,25 @@ import (
 	"context"
 	storageInterface "decentralizedProject/storage"
 	"fmt"
+	"github.com/golang/geo/s1"
+	"github.com/golang/geo/s2"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/x/bsonx"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
 var dbName = os.Getenv("MONGO_DBNAME")
 
-const collName = "orders"
+const (
+	collName      = "orders"
+	earthRadiusKm = 6371.01
+)
 
 type storage struct {
 	posts *mongo.Collection
@@ -52,18 +59,18 @@ func ensureIndexes(ctx context.Context, collection *mongo.Collection) {
 }
 
 func (s storage) GetOrder(ctx context.Context, weight storageInterface.Weight,
-	size storageInterface.Size, pointStart storageInterface.DeparturePoint,
-	pointEnd storageInterface.ReceivePoint, orderReadyDate storageInterface.ISOTimestamp) ([]storageInterface.OrderInfoForClient, error) {
+	size storageInterface.Size, pointStart string,
+	pointEnd string, orderReadyDate storageInterface.ISOTimestamp) ([]storageInterface.OrderInfoForClient, error) {
 
 	itemFast := storageInterface.Order{
 		Id:             primitive.NewObjectID(),
 		Weight:         weight,
 		Size:           size,
-		DeparturePoint: pointStart,
-		ReceivePoint:   pointEnd,
+		DeparturePoint: storageInterface.DeparturePoint(pointStart),
+		ReceivePoint:   storageInterface.ReceivePoint(pointEnd),
 		OrderReadyDate: orderReadyDate,
-		Price:          CalculatePrice(),
-		DeliveryDate:   CalculateDeliveryDate(),
+		Price:          CalculatePrice(pointStart, pointEnd, 1.0, weight, size),
+		DeliveryDate:   CalculateDeliveryDate(1),
 		OrderType:      storageInterface.OrderType("fast_Delivery"),
 		OrderStatus:    "NotConfirmed",
 	}
@@ -71,11 +78,11 @@ func (s storage) GetOrder(ctx context.Context, weight storageInterface.Weight,
 		Id:             primitive.NewObjectID(),
 		Weight:         weight,
 		Size:           size,
-		DeparturePoint: pointStart,
-		ReceivePoint:   pointEnd,
+		DeparturePoint: storageInterface.DeparturePoint(pointStart),
+		ReceivePoint:   storageInterface.ReceivePoint(pointEnd),
 		OrderReadyDate: orderReadyDate,
-		Price:          CalculatePrice(),
-		DeliveryDate:   CalculateDeliveryDate(),
+		Price:          CalculatePrice(pointStart, pointEnd, 0.0, weight, size),
+		DeliveryDate:   CalculateDeliveryDate(0),
 		OrderType:      storageInterface.OrderType("slow_Delivery"),
 		OrderStatus:    "NotConfirmed",
 	}
@@ -129,11 +136,43 @@ func (s storage) AcceptDelivery(ctx context.Context, id storageInterface.OrderId
 	return "OK", nil
 }
 
-func CalculatePrice() storageInterface.Price {
-	return storageInterface.Price(123.0)
+func CalculatePrice(pointStart string,
+	pointEnd string, orderType float64, weight storageInterface.Weight, size storageInterface.Size) storageInterface.Price {
+	//var from, to []string
+	from := strings.Split(pointStart, ",")
+	to := strings.Split(pointEnd, ",")
+
+	fromLat, err := strconv.ParseFloat(from[0], 64)
+	fromLon, err := strconv.ParseFloat(from[1], 64)
+
+	toLat, err := strconv.ParseFloat(to[0], 64)
+	toLon, err := strconv.ParseFloat(to[1], 64)
+	if err != nil {
+		return storageInterface.Price(-1)
+	}
+	fromPoint := s2.LatLngFromDegrees(fromLat, fromLon)
+	toPoint := s2.LatLngFromDegrees(toLat, toLon)
+	var result float64
+	result = angleToKm(fromPoint.Distance(toPoint))
+	return storageInterface.Price(result + orderType*500.0 + float64(weight) + float64(size)*2)
+	//if from[0] == "" || to[1] == "" {
+	//	fmt.Errorf("problems with parsing cords")
+	//	return storageInterface.Price(-1)
+	//}
+	//return storageInterface.Price(fromLat + fromLon + toLon + toLat)
 }
 
-func CalculateDeliveryDate() storageInterface.ISOTimestamp {
-	currentTime := storageInterface.ISOTimestamp(time.Now().UTC().Format(time.RFC3339))
-	return currentTime
+func kmToAngle(km float64) s1.Angle {
+	return s1.Angle(km / earthRadiusKm)
+}
+
+func angleToKm(angle s1.Angle) float64 {
+	return earthRadiusKm * float64(angle)
+}
+
+func CalculateDeliveryDate(orderType int) storageInterface.ISOTimestamp {
+	if orderType == 1 {
+		return storageInterface.ISOTimestamp(time.Now().Add(time.Hour * 24 * 5).UTC().Format(time.RFC3339))
+	}
+	return storageInterface.ISOTimestamp(time.Now().Add(time.Hour * 24 * 7).UTC().Format(time.RFC3339))
 }

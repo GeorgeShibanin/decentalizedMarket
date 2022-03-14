@@ -48,7 +48,7 @@ func (h *HTTPHandler) HandleGetOrder(rw http.ResponseWriter, r *http.Request) {
 	}
 
 	newOrder, err := h.Storage.GetOrder(r.Context(), storage.Weight(weight), storage.Size(size),
-		storage.DeparturePoint(departurePoint), storage.ReceivePoint(receivePoint),
+		departurePoint, receivePoint,
 		storage.ISOTimestamp(orderReadyDate))
 	if err != nil {
 		http.Error(rw, err.Error(), http.StatusBadRequest)
